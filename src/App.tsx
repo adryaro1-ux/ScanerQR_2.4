@@ -207,13 +207,24 @@ export function App() {
           <div className="flex items-center gap-2 shrink-0">
             <a
               href="/lector.html"
-              title="Abrir Módulo Lector de Asistencia para tablet o segundo dispositivo"
-              className="inline-flex min-h-[40px] items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors whitespace-nowrap cursor-pointer"
+              title="Abrir Módulo Lector de Asistencia para tablet o teléfono en portería"
+              className="inline-flex min-h-[40px] items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-emerald-50/60 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors whitespace-nowrap cursor-pointer"
             >
               <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
               </svg>
               <span>Lector Entrada</span>
+            </a>
+
+            <a
+              href="/central.html"
+              title="Abrir Panel Central de Monitoreo para el Administrador / PC Central"
+              className="inline-flex min-h-[40px] items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-indigo-50/60 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 transition-colors whitespace-nowrap cursor-pointer"
+            >
+              <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <span>Panel Central</span>
             </a>
 
             <PWAInstallButton
@@ -332,7 +343,11 @@ export function App() {
           <span>Credencial digital 100% offline</span>
           <div className="flex items-center gap-3">
             <a href="/lector.html" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
-              Módulo Lector de Asistencia (Tablet / Entrada)
+              Módulo Lector (Portería)
+            </a>
+            <span>·</span>
+            <a href="/central.html" className="font-semibold text-indigo-700 hover:text-indigo-800 underline">
+              Panel Central (PC Gerencia)
             </a>
             <span>·</span>
             <span>Almacenamiento local seguro</span>

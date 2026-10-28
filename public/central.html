@@ -1,0 +1,1160 @@
+<!doctype html>
+<html lang="es" class="h-full bg-slate-100">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Panel Central de Asistencia — Monitoreo en Tiempo Real</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Cliente oficial de Supabase para suscripción Realtime -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+      @keyframes pulseGlow {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.5; transform: scale(1.3); }
+      }
+      .pulse-beacon {
+        animation: pulseGlow 2s infinite ease-in-out;
+      }
+      @keyframes highlightRow {
+        0% { background-color: rgba(16, 185, 129, 0.25); }
+        100% { background-color: transparent; }
+      }
+      .row-incoming {
+        animation: highlightRow 2.5s ease-out forwards;
+      }
+    </style>
+  </head>
+  <body class="h-full flex flex-col font-sans text-slate-800 antialiased selection:bg-indigo-600 selection:text-white">
+
+    <!-- ======================================================== -->
+    <!-- 1. ENCABEZADO SUPERIOR DEL DASHBOARD CENTRAL              -->
+    <!-- ======================================================== -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+        <!-- Logo y Título -->
+        <div class="flex items-center gap-3">
+          <div class="h-11 w-11 rounded-2xl bg-gradient-to-tr from-indigo-700 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-100">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="text-base sm:text-lg font-black text-slate-900 tracking-tight">Panel Central de Asistencia</h1>
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                <span id="realtime-dot" class="h-2 w-2 rounded-full bg-emerald-500 pulse-beacon"></span>
+                <span id="realtime-status-label">EN VIVO</span>
+              </span>
+            </div>
+            <p class="text-xs text-slate-500">Software 2: Estación Central del Administrador · Sincronización en Tiempo Real</p>
+          </div>
+        </div>
+
+        <!-- Botones de Acción Superior -->
+        <div class="flex items-center flex-wrap gap-2 sm:gap-3">
+          <!-- Reloj en vivo -->
+          <div class="hidden md:flex flex-col text-right pr-2 border-r border-slate-200">
+            <span id="live-clock" class="text-xs font-mono font-bold text-slate-800">--:--:--</span>
+            <span id="live-date" class="text-[10px] text-slate-400">Cargando fecha...</span>
+          </div>
+
+          <!-- Toggle Sonido -->
+          <button
+            id="btn-sound-toggle"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition shadow-2xs"
+            title="Activar o silenciar aviso sonoro cuando ingrese un nuevo registro"
+          >
+            <svg id="sound-icon-on" class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            </svg>
+            <svg id="sound-icon-off" class="w-4 h-4 text-slate-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+            </svg>
+            <span id="sound-toggle-text">Sonido: ON</span>
+          </button>
+
+          <!-- Configuración Supabase Nube -->
+          <button
+            id="btn-open-cloud-cfg"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+          >
+            <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Supabase Nube</span>
+          </button>
+
+          <!-- Enlace al Lector Kiosk -->
+          <a
+            href="/lector.html"
+            target="_blank"
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-sm shadow-emerald-200"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+            </svg>
+            <span>Abrir Módulo Lector</span>
+          </a>
+
+          <!-- Enlace a la Credencial Virtual -->
+          <a
+            href="/"
+            class="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition"
+          >
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+            </svg>
+            <span>Credencial Personal</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- ======================================================== -->
+    <!-- 2. CONTENIDO PRINCIPAL DEL DASHBOARD                      -->
+    <!-- ======================================================== -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
+
+      <!-- BANNER DE CONEXIÓN SUPABASE -->
+      <div id="banner-supabase-info" class="rounded-2xl border p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+        <div class="flex items-start sm:items-center gap-3">
+          <div id="supabase-banner-icon" class="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="supabase-status-title" class="text-xs font-bold text-slate-800">Supabase Cloud: Conectado</span>
+              <span id="supabase-channel-tag" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono font-medium">realtime: asistencias</span>
+            </div>
+            <p id="supabase-status-desc" class="text-xs text-slate-500 mt-0.5">
+              Escuchando inserciones automáticas emitidas por el Módulo Lector en tiempo real.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            id="btn-force-refresh"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition"
+            title="Consultar inmediatamente los últimos registros de Supabase"
+          >
+            <svg id="refresh-spinner" class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>Sincronizar ahora</span>
+          </button>
+          <button
+            id="btn-test-simulation"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition"
+            title="Simular un marcaje de prueba en vivo para verificar visualización y sonidos"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span>Simular Marcaje</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 TARJETAS DE INDICADORES (KPIs) EN TIEMPO REAL -->
+      <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- 1. Marcajes Totales Hoy -->
+        <div class="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-2xs relative overflow-hidden">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500">Total Marcajes Hoy</span>
+            <div class="h-8 w-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+          </div>
+          <p id="kpi-total" class="text-2xl sm:text-3xl font-black text-slate-900 mt-2 font-mono">0</p>
+          <div class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-1">
+            <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+            <span>Entradas + Salidas acumuladas</span>
+          </div>
+        </div>
+
+        <!-- 2. Total Entradas Hoy -->
+        <div class="bg-white rounded-2xl p-4 sm:p-5 border border-emerald-100 shadow-2xs relative overflow-hidden">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-emerald-800">Entradas Registradas</span>
+            <div class="h-8 w-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+              </svg>
+            </div>
+          </div>
+          <p id="kpi-entradas" class="text-2xl sm:text-3xl font-black text-emerald-600 mt-2 font-mono">0</p>
+          <div class="flex items-center gap-1.5 text-[11px] text-emerald-600/70 mt-1">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+            <span>Ingresos validados en portería</span>
+          </div>
+        </div>
+
+        <!-- 3. Total Salidas Hoy -->
+        <div class="bg-white rounded-2xl p-4 sm:p-5 border border-amber-100 shadow-2xs relative overflow-hidden">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-amber-800">Salidas Registradas</span>
+            <div class="h-8 w-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </div>
+          </div>
+          <p id="kpi-salidas" class="text-2xl sm:text-3xl font-black text-amber-600 mt-2 font-mono">0</p>
+          <div class="flex items-center gap-1.5 text-[11px] text-amber-600/70 mt-1">
+            <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+            <span>Egresos validados</span>
+          </div>
+        </div>
+
+        <!-- 4. Personal Presente en Planta -->
+        <div class="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-indigo-200">Personal en Planta</span>
+            <div class="h-8 w-8 rounded-xl bg-white/10 text-emerald-400 flex items-center justify-center">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+          </div>
+          <div class="flex items-baseline gap-2 mt-2">
+            <p id="kpi-presentes" class="text-2xl sm:text-3xl font-black text-white font-mono">0</p>
+            <span class="text-xs text-indigo-300 font-medium">colaboradores activos</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-[11px] text-emerald-400 mt-1 font-mono">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 pulse-beacon"></span>
+            <span>Balance neto (Entradas - Salidas)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- BARRA DE HERRAMIENTAS: BÚSQUEDA, FILTROS Y EXPORTACIÓN -->
+      <section class="bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <!-- Búsqueda rápida -->
+        <div class="relative flex-1 max-w-md">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <input
+            id="input-search"
+            type="text"
+            placeholder="Buscar por Cédula, Nombre o Cargo..."
+            class="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50/50"
+          />
+        </div>
+
+        <!-- Filtros Rápidos (Todos / Entradas / Salidas) -->
+        <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start md:self-auto">
+          <button
+            type="button"
+            data-filter="TODOS"
+            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-slate-800 shadow-2xs transition"
+          >
+            Todos (<span id="count-all">0</span>)
+          </button>
+          <button
+            type="button"
+            data-filter="ENTRADA"
+            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
+          >
+            Solo Entradas (<span id="count-entradas">0</span>)
+          </button>
+          <button
+            type="button"
+            data-filter="SALIDA"
+            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
+          >
+            Solo Salidas (<span id="count-salidas">0</span>)
+          </button>
+        </div>
+
+        <!-- Botones de Exportación -->
+        <div class="flex items-center gap-2 self-end md:self-auto">
+          <button
+            id="btn-export-csv"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-xs"
+            title="Exportar registros filtrados a archivo CSV compatible con Excel"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Excel (CSV)</span>
+          </button>
+
+          <button
+            id="btn-export-json"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition shadow-2xs"
+            title="Exportar en formato JSON estructurado"
+          >
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20" />
+            </svg>
+            <span>JSON</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- TABLA PRINCIPAL DE REGISTROS EN TIEMPO REAL -->
+      <section class="bg-white rounded-2xl border border-slate-200 shadow-2xs flex-1 flex flex-col overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-bold text-slate-900">Registro de Actividad en Vivo</h2>
+            <p class="text-xs text-slate-500">Ordenado por los marcajes más recientes. Los nuevos eventos aparecen automáticamente arriba.</p>
+          </div>
+          <span id="table-record-count" class="text-xs font-mono font-semibold text-slate-500">Mostrando 0 registros</span>
+        </div>
+
+        <div class="flex-1 overflow-x-auto min-h-[340px]">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100 sticky top-0 uppercase tracking-wider text-[10px]">
+              <tr>
+                <th class="py-3 px-4">Hora / Fecha</th>
+                <th class="py-3 px-4">Movimiento</th>
+                <th class="py-3 px-4">Cédula / ID</th>
+                <th class="py-3 px-4">Colaborador</th>
+                <th class="py-3 px-4">Cargo / Función</th>
+                <th class="py-3 px-4">Origen / Nube</th>
+              </tr>
+            </thead>
+            <tbody id="activity-tbody" class="divide-y divide-slate-100 font-medium">
+              <!-- Filas generadas dinámicamente -->
+            </tbody>
+          </table>
+
+          <!-- Estado Vacío -->
+          <div id="empty-state" class="p-12 text-center flex flex-col items-center justify-center">
+            <div class="h-12 w-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 class="text-sm font-bold text-slate-700">Sin marcajes registrados aún hoy</h3>
+            <p class="text-xs text-slate-400 max-w-sm mt-1">
+              Cuando el personal escanee su código QR en el Módulo Lector (Software 1), la asistencia se reflejará aquí en vivo al instante.
+            </p>
+            <button
+              id="btn-empty-simulate"
+              type="button"
+              class="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <span>Generar Marcaje de Prueba</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- PIE DE PÁGINA -->
+    <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
+      <span>Software 2: Panel Central de Control de Asistencia · Supabase Realtime & PostgreSQL</span>
+    </footer>
+
+    <!-- ======================================================== -->
+    <!-- 3. MODAL DE CONFIGURACIÓN SUPABASE NUBE                  -->
+    <!-- ======================================================== -->
+    <div
+      id="cloud-modal"
+      class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center p-4"
+    >
+      <div class="w-full max-w-lg rounded-3xl bg-white border border-slate-200 p-6 shadow-2xl">
+        <div class="flex items-start justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <div class="h-10 w-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-slate-900">Conexión a Supabase Nube</h3>
+              <p class="text-xs text-slate-500">Configura las credenciales compartidas con el Módulo Lector</p>
+            </div>
+          </div>
+          <button
+            id="btn-close-cloud-modal"
+            type="button"
+            class="h-8 w-8 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">
+              Supabase Project URL
+            </label>
+            <input
+              id="cfg-supabase-url"
+              type="url"
+              placeholder="https://xyzcompany.supabase.co"
+              class="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">
+              Supabase Anon Key (Public Key)
+            </label>
+            <input
+              id="cfg-supabase-key"
+              type="password"
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              class="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div class="rounded-xl bg-slate-50 p-3 border border-slate-200 text-xs text-slate-600 space-y-1.5">
+            <p class="font-bold text-slate-800">Tabla requerida en PostgreSQL:</p>
+            <code class="block font-mono text-[11px] bg-white p-2 rounded-lg border border-slate-200 text-indigo-700 select-all overflow-x-auto">
+create table if not exists asistencias (
+  id uuid default gen_random_uuid() primary key,
+  cedula text not null,
+  nombre text not null,
+  cargo text,
+  tipo text not null,
+  fecha_hora timestamptz default now()
+);
+            </code>
+            <p class="text-[11px] text-slate-500">
+              * Asegúrate de habilitar <strong>Realtime</strong> en la tabla <code class="text-indigo-600 font-bold">asistencias</code> desde la consola de Supabase (Database &rarr; Replication &rarr; Source &rarr; asistencias).
+            </p>
+          </div>
+
+          <div id="modal-test-status" class="text-xs font-medium min-h-[1.2rem]"></div>
+        </div>
+
+        <div class="mt-6 flex items-center justify-between gap-3">
+          <button
+            id="btn-test-cloud-conn"
+            type="button"
+            class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+          >
+            Probar Conexión
+          </button>
+          <div class="flex items-center gap-2">
+            <button
+              id="btn-cancel-cloud-modal"
+              type="button"
+              class="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 transition"
+            >
+              Cerrar
+            </button>
+            <button
+              id="btn-save-cloud-modal"
+              type="button"
+              class="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition shadow-sm"
+            >
+              Guardar y Conectar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 4. LÓGICA JAVASCRIPT DEL DASHBOARD CENTRAL                -->
+    <!-- ======================================================== -->
+    <script>
+      (function () {
+        'use strict';
+
+        // Claves sincronizadas con Software 1 (Lector)
+        const STORAGE_KEY = 'control_asistencia_registros_v1';
+        const SUPABASE_URL_KEY = 'asistencia_supabase_url_v1';
+        const SUPABASE_KEY_KEY = 'asistencia_supabase_key_v1';
+        const SOUND_KEY = 'asistencia_central_sound_v1';
+
+        let records = [];
+        let supabaseUrl = localStorage.getItem(SUPABASE_URL_KEY) || '';
+        let supabaseKey = localStorage.getItem(SUPABASE_KEY_KEY) || '';
+        let soundEnabled = localStorage.getItem(SOUND_KEY) !== 'false'; // Por defecto ON
+
+        let supabaseClient = null;
+        let realtimeChannel = null;
+        let pollInterval = null;
+        let currentFilter = 'TODOS';
+        let searchQuery = '';
+
+        // Elementos DOM
+        const clockEl = document.getElementById('live-clock');
+        const dateEl = document.getElementById('live-date');
+        const tbodyEl = document.getElementById('activity-tbody');
+        const emptyStateEl = document.getElementById('empty-state');
+        const tableRecordCountEl = document.getElementById('table-record-count');
+
+        const kpiTotalEl = document.getElementById('kpi-total');
+        const kpiEntradasEl = document.getElementById('kpi-entradas');
+        const kpiSalidasEl = document.getElementById('kpi-salidas');
+        const kpiPresentesEl = document.getElementById('kpi-presentes');
+
+        const countAllEl = document.getElementById('count-all');
+        const countEntradasEl = document.getElementById('count-entradas');
+        const countSalidasEl = document.getElementById('count-salidas');
+
+        const inputSearch = document.getElementById('input-search');
+        const filterBtns = document.querySelectorAll('.filter-btn');
+
+        const btnExportCsv = document.getElementById('btn-export-csv');
+        const btnExportJson = document.getElementById('btn-export-json');
+        const btnForceRefresh = document.getElementById('btn-force-refresh');
+        const refreshSpinner = document.getElementById('refresh-spinner');
+        const btnTestSim = document.getElementById('btn-test-simulation');
+        const btnEmptySimulate = document.getElementById('btn-empty-simulate');
+
+        const btnSoundToggle = document.getElementById('btn-sound-toggle');
+        const soundIconOn = document.getElementById('sound-icon-on');
+        const soundIconOff = document.getElementById('sound-icon-off');
+        const soundToggleText = document.getElementById('sound-toggle-text');
+
+        const realtimeDot = document.getElementById('realtime-dot');
+        const realtimeStatusLabel = document.getElementById('realtime-status-label');
+        const supabaseStatusTitle = document.getElementById('supabase-status-title');
+        const supabaseStatusDesc = document.getElementById('supabase-status-desc');
+        const supabaseChannelTag = document.getElementById('supabase-channel-tag');
+        const supabaseBannerIcon = document.getElementById('supabase-banner-icon');
+
+        const cloudModal = document.getElementById('cloud-modal');
+        const btnOpenCloudCfg = document.getElementById('btn-open-cloud-cfg');
+        const btnCloseCloudModal = document.getElementById('btn-close-cloud-modal');
+        const btnCancelCloudModal = document.getElementById('btn-cancel-cloud-modal');
+        const btnSaveCloudModal = document.getElementById('btn-save-cloud-modal');
+        const btnTestCloudConn = document.getElementById('btn-test-cloud-conn');
+        const cfgSupabaseUrlInput = document.getElementById('cfg-supabase-url');
+        const cfgSupabaseKeyInput = document.getElementById('cfg-supabase-key');
+        const modalTestStatus = document.getElementById('modal-test-status');
+
+        // Síntesis de Sonido Web Audio API (Cero dependencias externas)
+        function playChime(isEntrada) {
+          if (!soundEnabled) return;
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            if (isEntrada) {
+              // Tono brillante ascendente (Entrada)
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+              osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+              gain.gain.setValueAtTime(0.2, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+              osc.start(ctx.currentTime);
+              osc.stop(ctx.currentTime + 0.35);
+            } else {
+              // Tono descendente suave (Salida)
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+              osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.18); // A4
+              gain.gain.setValueAtTime(0.2, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.38);
+              osc.start(ctx.currentTime);
+              osc.stop(ctx.currentTime + 0.38);
+            }
+          } catch (e) {
+            console.debug('Audio bloqueado o no soportado:', e);
+          }
+        }
+
+        function updateSoundUI() {
+          if (soundEnabled) {
+            soundIconOn.classList.remove('hidden');
+            soundIconOff.classList.add('hidden');
+            soundToggleText.textContent = 'Sonido: ON';
+            btnSoundToggle.classList.add('border-slate-200');
+          } else {
+            soundIconOn.classList.add('hidden');
+            soundIconOff.classList.remove('hidden');
+            soundToggleText.textContent = 'Sonido: OFF';
+          }
+        }
+
+        btnSoundToggle.addEventListener('click', () => {
+          soundEnabled = !soundEnabled;
+          localStorage.setItem(SOUND_KEY, soundEnabled ? 'true' : 'false');
+          updateSoundUI();
+          if (soundEnabled) playChime(true);
+        });
+
+        // Reloj y Fecha en Vivo
+        function updateClock() {
+          const now = new Date();
+          clockEl.textContent = now.toLocaleTimeString('es', { hour12: false });
+          dateEl.textContent = now.toLocaleDateString('es', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short'
+          });
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function getTodayString() {
+          return new Date().toISOString().split('T')[0];
+        }
+
+        // ========================================================
+        // 5. CONEXIÓN A SUPABASE Y SUSCRIPCIÓN REALTIME EN VIVO
+        // ========================================================
+        function initSupabase() {
+          // Limpiar suscripciones previas si las hay
+          if (realtimeChannel && supabaseClient) {
+            try {
+              supabaseClient.removeChannel(realtimeChannel);
+            } catch (e) {}
+            realtimeChannel = null;
+          }
+
+          if (supabaseUrl && supabaseKey && window.supabase) {
+            try {
+              supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+              supabaseStatusTitle.textContent = 'Supabase Cloud: Conectado';
+              supabaseStatusDesc.textContent = 'Recibiendo eventos en vivo en la tabla asistencias vía WebSockets Postgres Changes.';
+              supabaseChannelTag.textContent = 'realtime: activo';
+              supabaseChannelTag.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono font-medium';
+              realtimeDot.className = 'h-2 w-2 rounded-full bg-emerald-500 pulse-beacon';
+              realtimeStatusLabel.textContent = 'EN VIVO';
+              supabaseBannerIcon.className = 'h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0';
+
+              // Suscribirse a inserciones de Supabase en tiempo real
+              setupRealtimeSubscription();
+
+              // Cargar registros iniciales desde Supabase
+              fetchSupabaseRecords();
+
+            } catch (err) {
+              console.warn('Error inicializando Supabase:', err);
+              setOfflineModeState('Error de configuración');
+            }
+          } else {
+            // Modo local sin Supabase configurado aún
+            setOfflineModeState('Modo Local / Sin Configurar');
+            loadLocalRecords();
+          }
+        }
+
+        function setOfflineModeState(label) {
+          supabaseStatusTitle.textContent = 'Supabase Cloud: ' + label;
+          supabaseStatusDesc.textContent = 'Mostrando datos respaldados en el navegador local. Haz clic en "Supabase Nube" para conectar tu base de datos remota.';
+          supabaseChannelTag.textContent = 'modo: local';
+          supabaseChannelTag.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono font-medium';
+          realtimeDot.className = 'h-2 w-2 rounded-full bg-amber-500';
+          realtimeStatusLabel.textContent = 'LOCAL';
+          supabaseBannerIcon.className = 'h-9 w-9 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0';
+        }
+
+        function setupRealtimeSubscription() {
+          if (!supabaseClient) return;
+
+          try {
+            realtimeChannel = supabaseClient
+              .channel('asistencias-stream-v1')
+              .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'asistencias' },
+                (payload) => {
+                  console.log('⚡ Nuevo marcaje en tiempo real recibido:', payload.new);
+                  handleNewIncomingRecord(payload.new);
+                }
+              )
+              .subscribe((status) => {
+                console.log('Estado del canal Realtime Supabase:', status);
+                if (status === 'SUBSCRIBED') {
+                  realtimeStatusLabel.textContent = 'EN VIVO';
+                  realtimeDot.className = 'h-2 w-2 rounded-full bg-emerald-500 pulse-beacon';
+                }
+              });
+          } catch (e) {
+            console.warn('No se pudo suscribir al canal Realtime:', e);
+          }
+        }
+
+        // Consultar registros desde Supabase
+        async function fetchSupabaseRecords() {
+          if (!supabaseClient) return;
+          try {
+            refreshSpinner.classList.add('animate-spin');
+
+            const { data, error } = await supabaseClient
+              .from('asistencias')
+              .select('*')
+              .order('fecha_hora', { ascending: false })
+              .limit(200);
+
+            if (error) {
+              console.warn('Error al consultar Supabase:', error.message);
+              loadLocalRecords();
+            } else if (data && data.length > 0) {
+              // Convertir formato Supabase al formato de la app
+              const cloudRecords = data.map((item) => {
+                const itemDate = new Date(item.fecha_hora);
+                return {
+                  id: item.id ? String(item.id) : 'sb_' + itemDate.getTime(),
+                  timestamp: itemDate.getTime(),
+                  date: itemDate.toISOString().split('T')[0],
+                  time: itemDate.toLocaleTimeString('es', { hour12: false }),
+                  type: (item.tipo || 'ENTRADA').toUpperCase(),
+                  personId: item.cedula || 'ID-000',
+                  fullName: item.nombre || 'Colaborador',
+                  role: item.cargo || 'Personal',
+                  department: 'General',
+                  syncedCloud: true
+                };
+              });
+
+              // Mezclar con los locales respetando timestamps
+              mergeRecords(cloudRecords);
+            } else {
+              loadLocalRecords();
+            }
+          } catch (e) {
+            console.warn('Fallo de red en fetchSupabaseRecords:', e);
+            loadLocalRecords();
+          } finally {
+            refreshSpinner.classList.remove('animate-spin');
+          }
+        }
+
+        // Manejo de nuevo registro llegado por WebSockets Postgres Changes
+        function handleNewIncomingRecord(rawItem) {
+          const itemDate = new Date(rawItem.fecha_hora || Date.now());
+          const newRec = {
+            id: rawItem.id ? String(rawItem.id) : 'sb_' + itemDate.getTime(),
+            timestamp: itemDate.getTime(),
+            date: itemDate.toISOString().split('T')[0],
+            time: itemDate.toLocaleTimeString('es', { hour12: false }),
+            type: (rawItem.tipo || 'ENTRADA').toUpperCase(),
+            personId: rawItem.cedula || 'ID-000',
+            fullName: rawItem.nombre || 'Colaborador',
+            role: rawItem.cargo || 'Personal',
+            department: 'General',
+            syncedCloud: true,
+            isNewArrival: true // Para animación de fila
+          };
+
+          // Evitar duplicados por id
+          if (!records.some(r => r.id === newRec.id)) {
+            records.unshift(newRec);
+            playChime(newRec.type === 'ENTRADA');
+            renderUI();
+          }
+        }
+
+        // Fallback Local
+        function loadLocalRecords() {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                mergeRecords(parsed);
+              }
+            }
+          } catch (e) {
+            console.error('Error cargando registros locales:', e);
+          }
+          renderUI();
+        }
+
+        function mergeRecords(incomingList) {
+          const map = new Map();
+          // Añadir primero los que ya estaban
+          records.forEach(r => map.set(r.id, r));
+          // Sobrescribir o añadir entrantes
+          incomingList.forEach(r => map.set(r.id, r));
+
+          records = Array.from(map.values());
+          records.sort((a, b) => b.timestamp - a.timestamp);
+          renderUI();
+        }
+
+        // Auto-polling cada 4 segundos como fallback robusto
+        function startPollingFallback() {
+          if (pollInterval) clearInterval(pollInterval);
+          pollInterval = setInterval(() => {
+            if (supabaseClient) {
+              fetchSupabaseRecords();
+            } else {
+              loadLocalRecords();
+            }
+          }, 4000);
+        }
+
+        // ========================================================
+        // 6. RENDERIZADO DE INTERFAZ, KPIS Y TABLA
+        // ========================================================
+        function renderUI() {
+          const today = getTodayString();
+          const todayRecords = records.filter(r => r.date === today);
+
+          let entradasCount = 0;
+          let salidasCount = 0;
+
+          // Cálculo de colaboradores presentes en planta (Entrada sin salida posterior)
+          const latestByUserToday = new Map();
+          todayRecords.forEach(r => {
+            if (r.type === 'ENTRADA') entradasCount++;
+            if (r.type === 'SALIDA') salidasCount++;
+
+            if (!latestByUserToday.has(r.personId)) {
+              latestByUserToday.set(r.personId, r.type);
+            }
+          });
+
+          let presentesEnPlanta = 0;
+          latestByUserToday.forEach((lastType) => {
+            if (lastType === 'ENTRADA') presentesEnPlanta++;
+          });
+
+          // Actualizar Tarjetas KPI
+          kpiTotalEl.textContent = todayRecords.length;
+          kpiEntradasEl.textContent = entradasCount;
+          kpiSalidasEl.textContent = salidasCount;
+          kpiPresentesEl.textContent = presentesEnPlanta;
+
+          // Contadores de los filtros
+          countAllEl.textContent = records.length;
+          countEntradasEl.textContent = records.filter(r => r.type === 'ENTRADA').length;
+          countSalidasEl.textContent = records.filter(r => r.type === 'SALIDA').length;
+
+          // Filtrar lista
+          let filtered = records;
+          if (currentFilter !== 'TODOS') {
+            filtered = filtered.filter(r => r.type === currentFilter);
+          }
+
+          if (searchQuery.trim() !== '') {
+            const q = searchQuery.toLowerCase().trim();
+            filtered = filtered.filter(r =>
+              (r.fullName && r.fullName.toLowerCase().includes(q)) ||
+              (r.personId && r.personId.toLowerCase().includes(q)) ||
+              (r.role && r.role.toLowerCase().includes(q))
+            );
+          }
+
+          tableRecordCountEl.textContent = `Mostrando ${filtered.length} de ${records.length} registros`;
+
+          // Renderizar tabla
+          if (filtered.length === 0) {
+            tbodyEl.innerHTML = '';
+            emptyStateEl.classList.remove('hidden');
+          } else {
+            emptyStateEl.classList.add('hidden');
+            tbodyEl.innerHTML = filtered.map(r => {
+              const isEntrada = r.type === 'ENTRADA';
+              const rowClass = r.isNewArrival ? 'row-incoming' : 'hover:bg-slate-50/80 transition-colors';
+              const typeBadge = isEntrada
+                ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    ENTRADA
+                  </span>`
+                : `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    SALIDA
+                  </span>`;
+
+              const cloudBadge = r.syncedCloud
+                ? `<span class="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Nube OK
+                  </span>`
+                : `<span class="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                    Local
+                  </span>`;
+
+              return `
+                <tr class="${rowClass}">
+                  <td class="py-3 px-4 font-mono">
+                    <div class="font-bold text-slate-900">${escapeHtml(r.time)}</div>
+                    <div class="text-[10px] text-slate-400">${escapeHtml(r.date)}</div>
+                  </td>
+                  <td class="py-3 px-4">${typeBadge}</td>
+                  <td class="py-3 px-4 font-mono font-bold text-slate-800">${escapeHtml(r.personId)}</td>
+                  <td class="py-3 px-4">
+                    <div class="font-bold text-slate-900">${escapeHtml(r.fullName)}</div>
+                  </td>
+                  <td class="py-3 px-4 text-slate-600">${escapeHtml(r.role || 'Personal')}</td>
+                  <td class="py-3 px-4">${cloudBadge}</td>
+                </tr>
+              `;
+            }).join('');
+          }
+        }
+
+        function escapeHtml(str) {
+          if (!str) return '';
+          return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        }
+
+        // ========================================================
+        // 7. EVENTOS DE BÚSQUEDA, FILTROS Y EXPORTACIÓN
+        // ========================================================
+        inputSearch.addEventListener('input', (e) => {
+          searchQuery = e.target.value;
+          renderUI();
+        });
+
+        filterBtns.forEach(btn => {
+          btn.addEventListener('click', () => {
+            filterBtns.forEach(b => {
+              b.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition';
+            });
+            btn.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-slate-800 shadow-2xs transition';
+            currentFilter = btn.dataset.filter;
+            renderUI();
+          });
+        });
+
+        btnForceRefresh.addEventListener('click', () => {
+          if (supabaseClient) {
+            fetchSupabaseRecords();
+          } else {
+            loadLocalRecords();
+          }
+        });
+
+        // Exportar a Excel (CSV con UTF-8 BOM para soporte total de tildes)
+        btnExportCsv.addEventListener('click', () => {
+          if (records.length === 0) {
+            alert('No hay registros de asistencia disponibles para exportar.');
+            return;
+          }
+
+          let csvContent = '\uFEFF'; // BOM para que Excel detecte UTF-8
+          csvContent += 'ID Registro,Fecha,Hora,Tipo de Marcaje,Cédula / ID,Colaborador,Cargo,Estado Nube\r\n';
+
+          records.forEach(r => {
+            const line = [
+              `"${r.id}"`,
+              `"${r.date}"`,
+              `"${r.time}"`,
+              `"${r.type}"`,
+              `"${r.personId}"`,
+              `"${(r.fullName || '').replace(/"/g, '""')}"`,
+              `"${(r.role || '').replace(/"/g, '""')}"`,
+              `"${r.syncedCloud ? 'Sincronizado Supabase' : 'Local'}"`
+            ].join(',');
+            csvContent += line + '\r\n';
+          });
+
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `Asistencias_Control_${getTodayString()}.csv`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        });
+
+        // Exportar a JSON
+        btnExportJson.addEventListener('click', () => {
+          if (records.length === 0) {
+            alert('No hay registros de asistencia para exportar.');
+            return;
+          }
+          const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(records, null, 2));
+          const link = document.createElement('a');
+          link.href = dataStr;
+          link.download = `Asistencias_Control_${getTodayString()}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        });
+
+        // Simular Marcaje de Prueba en Vivo (Entrada/Salida)
+        function simulateTestAttendance() {
+          const mockUsers = [
+            { id: '1098765432', name: 'Carlos Mendoza', role: 'Ingeniero de Planta' },
+            { id: '2045678901', name: 'Ana Sofía Rivas', role: 'Supervisora de Calidad' },
+            { id: '1598472611', name: 'Diego Alejandro Gómez', role: 'Operador de Logística' },
+            { id: '3129845760', name: 'Valentina Restrepo', role: 'Coordinadora de RRHH' },
+            { id: '4091823746', name: 'Julián Camilo Torres', role: 'Técnico de Mantenimiento' }
+          ];
+
+          const randomUser = mockUsers[Math.floor(Math.random() * mockUsers.length)];
+          const now = new Date();
+          const today = getTodayString();
+
+          // Determinar si es Entrada o Salida según último estado de esa persona
+          const userLogs = records.filter(r => r.date === today && r.personId === randomUser.id);
+          let type = 'ENTRADA';
+          if (userLogs.length > 0) {
+            userLogs.sort((a, b) => b.timestamp - a.timestamp);
+            type = userLogs[0].type === 'ENTRADA' ? 'SALIDA' : 'ENTRADA';
+          }
+
+          const newLog = {
+            id: 'sim_' + now.getTime() + '_' + Math.random().toString(36).substr(2, 4),
+            timestamp: now.getTime(),
+            date: today,
+            time: now.toLocaleTimeString('es', { hour12: false }),
+            type: type,
+            personId: randomUser.id,
+            fullName: randomUser.name,
+            role: randomUser.role,
+            department: 'Operaciones',
+            syncedCloud: !!supabaseClient,
+            isNewArrival: true
+          };
+
+          // Guardar en array local y localStorage
+          records.unshift(newLog);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(records.slice(0, 500)));
+          } catch (e) {}
+
+          // Si Supabase está conectado, insertarlo también en la tabla real
+          if (supabaseClient) {
+            supabaseClient
+              .from('asistencias')
+              .insert([
+                {
+                  cedula: newLog.personId,
+                  nombre: newLog.fullName,
+                  cargo: newLog.role,
+                  tipo: newLog.type,
+                  fecha_hora: new Date(newLog.timestamp).toISOString()
+                }
+              ])
+              .then(({ error }) => {
+                if (error) console.warn('Error insertando simulación en Supabase:', error.message);
+                else console.log('Simulación subida a Supabase exitosamente');
+              });
+          }
+
+          playChime(type === 'ENTRADA');
+          renderUI();
+        }
+
+        btnTestSim.addEventListener('click', simulateTestAttendance);
+        btnEmptySimulate.addEventListener('click', simulateTestAttendance);
+
+        // ========================================================
+        // 8. MODAL DE CONFIGURACIÓN SUPABASE
+        // ========================================================
+        btnOpenCloudCfg.addEventListener('click', () => {
+          cfgSupabaseUrlInput.value = localStorage.getItem(SUPABASE_URL_KEY) || '';
+          cfgSupabaseKeyInput.value = localStorage.getItem(SUPABASE_KEY_KEY) || '';
+          modalTestStatus.textContent = '';
+          cloudModal.classList.remove('hidden');
+          cloudModal.classList.add('flex');
+        });
+
+        function closeCloudModal() {
+          cloudModal.classList.add('hidden');
+          cloudModal.classList.remove('flex');
+        }
+
+        btnCloseCloudModal.addEventListener('click', closeCloudModal);
+        btnCancelCloudModal.addEventListener('click', closeCloudModal);
+
+        btnSaveCloudModal.addEventListener('click', () => {
+          const url = cfgSupabaseUrlInput.value.trim();
+          const key = cfgSupabaseKeyInput.value.trim();
+
+          localStorage.setItem(SUPABASE_URL_KEY, url);
+          localStorage.setItem(SUPABASE_KEY_KEY, key);
+
+          supabaseUrl = url;
+          supabaseKey = key;
+
+          initSupabase();
+          closeCloudModal();
+        });
+
+        btnTestCloudConn.addEventListener('click', async () => {
+          const url = cfgSupabaseUrlInput.value.trim();
+          const key = cfgSupabaseKeyInput.value.trim();
+
+          if (!url || !key) {
+            modalTestStatus.className = 'text-xs font-semibold text-amber-600';
+            modalTestStatus.textContent = 'Por favor ingresa tanto la URL como la Anon Key de Supabase.';
+            return;
+          }
+
+          modalTestStatus.className = 'text-xs font-semibold text-slate-500';
+          modalTestStatus.textContent = 'Verificando conexión con Supabase...';
+
+          try {
+            const testClient = window.supabase.createClient(url, key);
+            const { error } = await testClient.from('asistencias').select('count', { count: 'exact', head: true });
+
+            if (error) {
+              modalTestStatus.className = 'text-xs font-semibold text-red-600';
+              modalTestStatus.textContent = 'Error: ' + error.message;
+            } else {
+              modalTestStatus.className = 'text-xs font-semibold text-emerald-600';
+              modalTestStatus.textContent = '¡Conexión exitosa! La tabla asistencias está lista para recibir datos en vivo.';
+            }
+          } catch (e) {
+            modalTestStatus.className = 'text-xs font-semibold text-red-600';
+            modalTestStatus.textContent = 'Fallo de conexión: ' + (e.message || e);
+          }
+        });
+
+        // ========================================================
+        // 9. INICIALIZACIÓN
+        // ========================================================
+        updateSoundUI();
+        initSupabase();
+        startPollingFallback();
+
+      })();
+    </script>
+  </body>
+</html>
