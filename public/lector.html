@@ -518,11 +518,22 @@
         const SUPABASE_KEY_KEY = 'asistencia_supabase_key_v1';
         const DISCORD_KEY = 'asistencia_discord_webhook_v1';
 
+        // Credenciales por defecto proporcionadas directamente en código
+        const DEFAULT_SUPABASE_RAW_URL = 'https://plhoowhqyqjycqncidzn.supabase.co/rest/v1/';
+        const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsaG9vd2hxeXFqeWNxbmNpZHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxNTA3MjAsImV4cCI6MjEwODcyNjcyMH0.su9TBc2VA7OL8KRjAbfZsR_-T1rrwUwEhI3NZaMR_o8';
+        const DEFAULT_DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1564844360158158868/LZ-96-M8txecH6KtdsKiWUgeDjcceXjijlFXcu3x6KYbg7cWjWoL4x8cwhXvKfujzrQ_';
+
+        // Sanitizador de URL para SDK Supabase (elimina /rest/v1/ final si viene provisto)
+        function sanitizeSupabaseUrl(rawUrl) {
+          if (!rawUrl) return '';
+          return rawUrl.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+        }
+
         let records = loadRecords();
         let securityPin = localStorage.getItem(PIN_KEY) || '1234';
-        let supabaseUrl = localStorage.getItem(SUPABASE_URL_KEY) || '';
-        let supabaseKey = localStorage.getItem(SUPABASE_KEY_KEY) || '';
-        let discordWebhook = localStorage.getItem(DISCORD_KEY) || '';
+        let supabaseUrl = sanitizeSupabaseUrl(localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_RAW_URL);
+        let supabaseKey = (localStorage.getItem(SUPABASE_KEY_KEY) || DEFAULT_SUPABASE_KEY).trim();
+        let discordWebhook = (localStorage.getItem(DISCORD_KEY) || DEFAULT_DISCORD_WEBHOOK).trim();
 
         let supabaseClient = null;
         let html5QrCode = null;
@@ -532,6 +543,7 @@
         let searchQuery = '';
         let hideConfirmTimer = null;
         let enteredPin = '';
+        let isSyncingQueue = false;
 
         // Elementos DOM
         const pinLockScreen = document.getElementById('pin-lock-screen');
@@ -581,15 +593,42 @@
         const headerSupabaseDot = document.getElementById('header-supabase-dot');
         const headerSupabaseLabel = document.getElementById('header-supabase-label');
 
+        // Actualizar indicador visual de sincronización y conectividad
+        function updateSyncBadge(isSyncing = false) {
+          const pendingCloud = records.filter(r => !r.syncedCloud);
+          const isOnline = navigator.onLine;
+
+          headerSupabaseBadge.classList.remove('hidden');
+
+          if (!isOnline) {
+            headerSupabaseDot.className = 'h-1.5 w-1.5 rounded-full bg-red-500';
+            headerSupabaseLabel.textContent = pendingCloud.length > 0 
+              ? `Offline (${pendingCloud.length} en cola local)` 
+              : 'Modo Offline (Guardando local)';
+            headerSupabaseBadge.className = 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200';
+          } else if (isSyncing) {
+            headerSupabaseDot.className = 'h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse';
+            headerSupabaseLabel.textContent = `Sincronizando (${pendingCloud.length} pendientes)...`;
+            headerSupabaseBadge.className = 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200';
+          } else if (pendingCloud.length > 0) {
+            headerSupabaseDot.className = 'h-1.5 w-1.5 rounded-full bg-amber-500';
+            headerSupabaseLabel.textContent = `${pendingCloud.length} pendientes de subir`;
+            headerSupabaseBadge.className = 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200';
+          } else {
+            headerSupabaseDot.className = 'h-1.5 w-1.5 rounded-full bg-emerald-500';
+            headerSupabaseLabel.textContent = 'En Línea · Supabase OK';
+            headerSupabaseBadge.className = 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200';
+          }
+        }
+
         // Inicializar cliente Supabase si existen credenciales
         function initSupabase() {
-          if (supabaseUrl && supabaseKey && window.supabase) {
+          const cleanUrl = sanitizeSupabaseUrl(supabaseUrl);
+          if (cleanUrl && supabaseKey && window.supabase) {
             try {
-              supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
-              headerSupabaseBadge.classList.remove('hidden');
-              headerSupabaseDot.className = 'h-1.5 w-1.5 rounded-full bg-emerald-500';
-              headerSupabaseLabel.textContent = 'Supabase Conectado';
-              console.log('Cliente Supabase conectado exitosamente');
+              supabaseClient = window.supabase.createClient(cleanUrl, supabaseKey);
+              updateSyncBadge();
+              console.log('Cliente Supabase conectado exitosamente a:', cleanUrl);
             } catch (err) {
               console.warn('Error inicializando Supabase:', err);
               supabaseClient = null;
@@ -853,26 +892,32 @@
             fullName: personData.fullName,
             role: personData.role,
             department: personData.department,
-            syncedCloud: false
+            syncedCloud: false,
+            syncedDiscord: false
           };
 
-          // A) Respaldo inmediato en LocalStorage (Offline-First)
+          // A) Respaldo inmediato e inviolable en LocalStorage (Offline-First)
           records.unshift(newRecord);
           saveRecords();
 
-          // B) Audio y Tarjeta de éxito
+          // B) Audio y Tarjeta de éxito instantáneo para el colaborador
           playChime(nextType === 'ENTRADA');
           showConfirmationCard(newRecord);
           renderUI();
+          updateSyncBadge();
 
-          // C) ENVIAR AUTOMÁTICAMENTE A SUPABASE (Nube en vivo)
-          sendRecordToSupabase(newRecord);
-
-          // D) DISPARAR AUTOMÁTICAMENTE POST A DISCORD WEBHOOK
-          sendRecordToDiscord(newRecord);
+          // C) ENVIAR A SUPABASE & DISCORD (o encolar automáticamente si hay inestabilidad)
+          if (navigator.onLine) {
+            sendRecordToSupabase(newRecord);
+            sendRecordToDiscord(newRecord);
+          } else {
+            confSupabaseStatus.textContent = 'Supabase: Guardado Local (Offline)';
+            confDiscordStatus.textContent = 'Discord: En cola local';
+            updateSyncBadge();
+          }
         }
 
-        // Envío automático a Supabase
+        // Envío a Supabase con control de conectividad y actualización de estado
         async function sendRecordToSupabase(record) {
           if (!supabaseClient) {
             confSupabaseStatus.textContent = 'Supabase: Sin configurar (Local)';
@@ -894,20 +939,25 @@
 
             if (error) {
               console.warn('Error insertando en Supabase:', error.message);
-              confSupabaseStatus.textContent = 'Supabase: Pendiente (Error red)';
+              record.syncedCloud = false;
+              confSupabaseStatus.textContent = 'Supabase: Guardado Local (Pendiente sync)';
             } else {
               record.syncedCloud = true;
-              saveRecords();
               confSupabaseStatus.textContent = 'Supabase Nube: Sincronizado OK';
-              renderUI();
+              console.log('✅ Marcaje guardado en Supabase Nube:', record.personId);
             }
           } catch (e) {
-            console.warn('Fallo de red con Supabase:', e);
-            confSupabaseStatus.textContent = 'Supabase: Pendiente';
+            console.warn('Fallo de red al conectar con Supabase:', e);
+            record.syncedCloud = false;
+            confSupabaseStatus.textContent = 'Supabase: Guardado Local (Offline)';
+          } finally {
+            saveRecords();
+            renderUI();
+            updateSyncBadge();
           }
         }
 
-        // Envío automático al Webhook de Discord
+        // Envío al Webhook de Discord con tolerancia a fallos
         async function sendRecordToDiscord(record) {
           if (!discordWebhook) {
             confDiscordStatus.textContent = 'Discord: No configurado';
@@ -922,21 +972,123 @@
               color: isEntry ? 0x10b981 : 0xf59e0b,
               fields: [
                 { name: 'Cédula / ID', value: record.personId, inline: true },
-                { name: 'Cargo', value: record.role, inline: true },
+                { name: 'Cargo', value: record.role || 'Personal', inline: true },
                 { name: 'Hora Exacta', value: record.time, inline: true }
               ],
               footer: { text: 'Control de Asistencia Automatizado · Supabase Cloud' },
               timestamp: new Date().toISOString()
             };
 
-            await fetch(discordWebhook, {
+            const res = await fetch(discordWebhook, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ embeds: [embed] })
             });
-            confDiscordStatus.textContent = 'Discord: Notificación Enviada';
+
+            if (res.ok) {
+              record.syncedDiscord = true;
+              confDiscordStatus.textContent = 'Discord: Notificación Enviada';
+            } else {
+              record.syncedDiscord = false;
+              confDiscordStatus.textContent = 'Discord: Pendiente de sync';
+            }
           } catch (err) {
-            confDiscordStatus.textContent = 'Discord: Error de red';
+            record.syncedDiscord = false;
+            confDiscordStatus.textContent = 'Discord: Guardado en cola local';
+          } finally {
+            saveRecords();
+          }
+        }
+
+        // Motor de Sincronización Automática en Segundo Plano (Auto-Sync Queue)
+        // Se ejecuta cuando el internet regresa o periódicamente para subir datos pendientes
+        async function syncPendingQueue() {
+          if (isSyncingQueue || !navigator.onLine) {
+            updateSyncBadge();
+            return;
+          }
+
+          const pendingCloud = records.filter(r => !r.syncedCloud);
+          const pendingDiscord = records.filter(r => !r.syncedDiscord && discordWebhook);
+
+          if (pendingCloud.length === 0 && pendingDiscord.length === 0) {
+            updateSyncBadge();
+            return;
+          }
+
+          isSyncingQueue = true;
+          updateSyncBadge(true);
+
+          try {
+            // Sincronizar hacia Supabase los que quedaron en local por caída de internet
+            if (supabaseClient && pendingCloud.length > 0) {
+              for (const rec of pendingCloud) {
+                try {
+                  const { error } = await supabaseClient
+                    .from('asistencias')
+                    .insert([
+                      {
+                        cedula: rec.personId,
+                        nombre: rec.fullName,
+                        cargo: rec.role,
+                        tipo: rec.type,
+                        fecha_hora: new Date(rec.timestamp).toISOString()
+                      }
+                    ]);
+
+                  if (!error) {
+                    rec.syncedCloud = true;
+                    console.log('⚡ Auto-Sync exitoso hacia Supabase para:', rec.fullName);
+                  } else {
+                    console.warn('Error en Supabase durante sincronización diferida:', error.message);
+                    break;
+                  }
+                } catch (err) {
+                  console.warn('Fallo de red en sync diferido:', err);
+                  break;
+                }
+              }
+            }
+
+            // Sincronizar hacia Discord las notificaciones pendientes
+            if (discordWebhook && pendingDiscord.length > 0) {
+              for (const rec of pendingDiscord) {
+                try {
+                  const isEntry = rec.type === 'ENTRADA';
+                  const embed = {
+                    title: `${isEntry ? '🟢 ENTRADA REGISTRADA (Sincronizada)' : '🟠 SALIDA REGISTRADA (Sincronizada)'}`,
+                    description: `**${rec.fullName}** ha registrado su ${rec.type.toLowerCase()} (recuperado de almacenamiento local tras conexión inestable).`,
+                    color: isEntry ? 0x10b981 : 0xf59e0b,
+                    fields: [
+                      { name: 'Cédula / ID', value: rec.personId, inline: true },
+                      { name: 'Cargo', value: rec.role || 'Personal', inline: true },
+                      { name: 'Hora Marcaje', value: `${rec.date} ${rec.time}`, inline: true }
+                    ],
+                    footer: { text: 'Control de Asistencia Automatizado · Auto-Sync Offline Recovery' },
+                    timestamp: new Date(rec.timestamp).toISOString()
+                  };
+
+                  const res = await fetch(discordWebhook, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ embeds: [embed] })
+                  });
+
+                  if (res.ok) {
+                    rec.syncedDiscord = true;
+                  }
+                } catch (err) {
+                  console.warn('Error sincronizando cola hacia Discord:', err);
+                  break;
+                }
+              }
+            }
+
+            saveRecords();
+            renderUI();
+          } finally {
+            isSyncingQueue = false;
+            updateSyncBadge();
           }
         }
 
@@ -1245,9 +1397,28 @@
           }
         });
 
+        // Listeners de Red para Auto-Sincronización ante conexiones inestables
+        window.addEventListener('online', () => {
+          console.log('🌐 Conexión a internet restablecida. Sincronizando marcajes guardados localmente...');
+          initSupabase();
+          syncPendingQueue();
+        });
+
+        window.addEventListener('offline', () => {
+          console.warn('⚠️ Conexión perdida. Modo Offline activo (guardando en almacenamiento local seguro).');
+          updateSyncBadge();
+        });
+
+        // Intervalo periódico de sincronización automática cada 6 segundos si hay cola pendiente
+        setInterval(syncPendingQueue, 6000);
+
         // Inicialización al cargar la página
         initSupabase();
         renderUI();
+        updateSyncBadge();
+
+        // Disparar sincronización inicial por si quedaron marcajes de sesiones previas sin subir
+        setTimeout(syncPendingQueue, 1500);
 
       })();
     </script>

@@ -503,9 +503,18 @@ create table if not exists asistencias (
         const SUPABASE_KEY_KEY = 'asistencia_supabase_key_v1';
         const SOUND_KEY = 'asistencia_central_sound_v1';
 
+        // Credenciales compartidas por defecto
+        const DEFAULT_SUPABASE_RAW_URL = 'https://plhoowhqyqjycqncidzn.supabase.co/rest/v1/';
+        const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsaG9vd2hxeXFqeWNxbmNpZHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxNTA3MjAsImV4cCI6MjEwODcyNjcyMH0.su9TBc2VA7OL8KRjAbfZsR_-T1rrwUwEhI3NZaMR_o8';
+
+        function sanitizeSupabaseUrl(rawUrl) {
+          if (!rawUrl) return '';
+          return rawUrl.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+        }
+
         let records = [];
-        let supabaseUrl = localStorage.getItem(SUPABASE_URL_KEY) || '';
-        let supabaseKey = localStorage.getItem(SUPABASE_KEY_KEY) || '';
+        let supabaseUrl = sanitizeSupabaseUrl(localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_RAW_URL);
+        let supabaseKey = (localStorage.getItem(SUPABASE_KEY_KEY) || DEFAULT_SUPABASE_KEY).trim();
         let soundEnabled = localStorage.getItem(SOUND_KEY) !== 'false'; // Por defecto ON
 
         let supabaseClient = null;
@@ -1088,8 +1097,8 @@ create table if not exists asistencias (
         // 8. MODAL DE CONFIGURACIÓN SUPABASE
         // ========================================================
         btnOpenCloudCfg.addEventListener('click', () => {
-          cfgSupabaseUrlInput.value = localStorage.getItem(SUPABASE_URL_KEY) || '';
-          cfgSupabaseKeyInput.value = localStorage.getItem(SUPABASE_KEY_KEY) || '';
+          cfgSupabaseUrlInput.value = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_RAW_URL;
+          cfgSupabaseKeyInput.value = localStorage.getItem(SUPABASE_KEY_KEY) || DEFAULT_SUPABASE_KEY;
           modalTestStatus.textContent = '';
           cloudModal.classList.remove('hidden');
           cloudModal.classList.add('flex');
@@ -1104,13 +1113,14 @@ create table if not exists asistencias (
         btnCancelCloudModal.addEventListener('click', closeCloudModal);
 
         btnSaveCloudModal.addEventListener('click', () => {
-          const url = cfgSupabaseUrlInput.value.trim();
+          const rawUrl = cfgSupabaseUrlInput.value.trim();
           const key = cfgSupabaseKeyInput.value.trim();
+          const cleanUrl = sanitizeSupabaseUrl(rawUrl);
 
-          localStorage.setItem(SUPABASE_URL_KEY, url);
+          localStorage.setItem(SUPABASE_URL_KEY, rawUrl);
           localStorage.setItem(SUPABASE_KEY_KEY, key);
 
-          supabaseUrl = url;
+          supabaseUrl = cleanUrl;
           supabaseKey = key;
 
           initSupabase();
@@ -1118,8 +1128,9 @@ create table if not exists asistencias (
         });
 
         btnTestCloudConn.addEventListener('click', async () => {
-          const url = cfgSupabaseUrlInput.value.trim();
+          const rawUrl = cfgSupabaseUrlInput.value.trim();
           const key = cfgSupabaseKeyInput.value.trim();
+          const url = sanitizeSupabaseUrl(rawUrl);
 
           if (!url || !key) {
             modalTestStatus.className = 'text-xs font-semibold text-amber-600';
@@ -1148,8 +1159,19 @@ create table if not exists asistencias (
         });
 
         // ========================================================
-        // 9. INICIALIZACIÓN
+        // 9. LISTENERS DE RED E INICIALIZACIÓN
         // ========================================================
+        window.addEventListener('online', () => {
+          console.log('🌐 Conexión a internet restablecida en PC Central. Reconectando Supabase Realtime...');
+          initSupabase();
+          fetchSupabaseRecords();
+        });
+
+        window.addEventListener('offline', () => {
+          console.warn('⚠️ Se perdió la conexión a internet en PC Central. Mostrando registros locales...');
+          setOfflineModeState('Sin conexión (Mostrando datos locales)');
+        });
+
         updateSoundUI();
         initSupabase();
         startPollingFallback();
