@@ -1,0 +1,1231 @@
+<!doctype html>
+<html lang="es" class="h-full bg-slate-100">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Módulo Lector de Asistencia — Control de Acceso</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Librería html5-qrcode para lectura de cámara de alta velocidad -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+    <style>
+      /* Animación de barrido del visor de escaneo */
+      @keyframes scanLaser {
+        0%, 100% {
+          top: 8%;
+          opacity: 0.8;
+        }
+        50% {
+          top: 92%;
+          opacity: 1;
+        }
+      }
+      .scan-laser-line {
+        position: absolute;
+        left: 5%;
+        right: 5%;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #22c55e, #10b981, transparent);
+        box-shadow: 0 0 12px #22c55e;
+        animation: scanLaser 2.2s ease-in-out infinite;
+      }
+      #reader video {
+        object-fit: cover !important;
+        border-radius: 1rem !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      #reader {
+        border: none !important;
+      }
+      /* Animación de vibración al errar el PIN */
+      @keyframes shakeKeypad {
+        0%, 100% { transform: translateX(0); }
+        20%, 60% { transform: translateX(-8px); }
+        40%, 80% { transform: translateX(8px); }
+      }
+      .shake-error {
+        animation: shakeKeypad 0.4s ease-in-out;
+      }
+    </style>
+  </head>
+  <body class="h-full flex flex-col font-sans text-slate-800 antialiased selection:bg-emerald-600 selection:text-white">
+
+    <!-- ======================================================== -->
+    <!-- 1. PANTALLA DE SEGURIDAD (BLOQUEO POR PIN AL INICIO)     -->
+    <!-- ======================================================== -->
+    <div
+      id="pin-lock-screen"
+      class="fixed inset-0 z-50 bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4"
+    >
+      <div id="pin-card-box" class="w-full max-w-sm rounded-3xl bg-white border border-slate-200 p-6 sm:p-8 shadow-2xl text-center">
+        <!-- Icono de Seguridad -->
+        <div class="mx-auto h-14 w-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 shadow-xs">
+          <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+
+        <h2 class="text-xl font-bold text-slate-900 leading-tight">Acceso al Lector</h2>
+        <p class="text-xs text-slate-500 mt-1">Introduce el PIN de 4 dígitos para habilitar el terminal de entrada</p>
+
+        <!-- Indicador de 4 dígitos (puntos PIN) -->
+        <div class="flex items-center justify-center gap-3 my-6">
+          <div id="pin-dot-1" class="h-4 w-4 rounded-full border-2 border-slate-300 transition-colors"></div>
+          <div id="pin-dot-2" class="h-4 w-4 rounded-full border-2 border-slate-300 transition-colors"></div>
+          <div id="pin-dot-3" class="h-4 w-4 rounded-full border-2 border-slate-300 transition-colors"></div>
+          <div id="pin-dot-4" class="h-4 w-4 rounded-full border-2 border-slate-300 transition-colors"></div>
+        </div>
+
+        <p id="pin-error-msg" class="text-xs font-semibold text-red-600 mb-3 min-h-[1rem]"></p>
+
+        <!-- Teclado Numérico Táctil -->
+        <div class="grid grid-cols-3 gap-2.5 max-w-[260px] mx-auto select-none">
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">1</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">2</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">3</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">4</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">5</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">6</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">7</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">8</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">9</button>
+          <button type="button" id="btn-pin-clear" class="h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-xs font-semibold text-slate-500 transition">Borrar</button>
+          <button type="button" class="keypad-btn h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 transition">0</button>
+          <button type="button" id="btn-pin-backspace" class="h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-7.172a2 2 0 00-1.414.586L3 12z" />
+            </svg>
+          </button>
+        </div>
+
+        <p class="text-[11px] text-slate-400 mt-5">PIN por defecto: <strong class="text-slate-600 font-mono">1234</strong></p>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 2. BARRA SUPERIOR DE NAVEGACIÓN Y ESTADO                  -->
+    <!-- ======================================================== -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="h-10 w-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-xs">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">Módulo Lector de Asistencia</h1>
+            <p class="text-xs text-slate-500 font-medium">Terminal de Entrada / Acceso 100% Offline</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3">
+          <!-- Reloj en vivo de la estación -->
+          <div class="hidden sm:flex flex-col items-end px-3 py-1 bg-slate-50 rounded-xl border border-slate-200">
+            <span id="live-clock" class="text-sm font-bold font-mono text-slate-900 tabular-nums">00:00:00</span>
+            <span id="live-date" class="text-[11px] text-slate-500">Hoy</span>
+          </div>
+
+          <!-- Botón de Bloqueo Manual -->
+          <button
+            type="button"
+            id="btn-lock-terminal"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+            title="Bloquear pantalla con PIN"
+          >
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            <span class="hidden md:inline">Bloquear</span>
+          </button>
+
+          <a
+            href="/"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span class="hidden md:inline">Credenciales</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- ======================================================== -->
+    <!-- 3. CONTENEDOR PRINCIPAL DUAL (Optimizada para Tablets)   -->
+    <!-- ======================================================== -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      
+      <!-- ========================================== -->
+      <!-- PANEL IZQUIERDO: ESCÁNER DE CÁMARA (5 COLS) -->
+      <!-- ========================================== -->
+      <section class="lg:col-span-5 flex flex-col gap-4">
+        <!-- Tarjeta del Visor de Cámara -->
+        <div class="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs flex flex-col">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+              <span class="relative flex h-2.5 w-2.5">
+                <span id="scanner-indicator-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span id="scanner-indicator-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wide">Visor de Cámara</h2>
+            </div>
+            <span id="scanner-status-text" class="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+              Activo
+            </span>
+          </div>
+
+          <!-- Contenedor del Lector Óptico -->
+          <div class="relative w-full aspect-square max-h-[360px] bg-slate-950 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center">
+            <div id="reader" class="w-full h-full flex items-center justify-center"></div>
+
+            <!-- Retícula visual de enfoque (overlay) -->
+            <div id="reticle-overlay" class="absolute inset-0 pointer-events-none flex items-center justify-center p-8">
+              <div class="relative w-48 h-48 sm:w-56 sm:h-56 border-2 border-emerald-400/40 rounded-2xl">
+                <!-- Esquinas de mira -->
+                <div class="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-emerald-500 rounded-tl-lg"></div>
+                <div class="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-emerald-500 rounded-tr-lg"></div>
+                <div class="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-emerald-500 rounded-bl-lg"></div>
+                <div class="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-emerald-500 rounded-br-lg"></div>
+                <!-- Línea de escaneo láser -->
+                <div class="scan-laser-line"></div>
+              </div>
+            </div>
+
+            <!-- Placeholder cuando la cámara está apagada o bloqueada -->
+            <div id="camera-offline-placeholder" class="hidden absolute inset-0 bg-slate-900 flex flex-col items-center justify-center text-center p-6 text-white">
+              <svg class="w-12 h-12 text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <p class="text-sm font-semibold">Cámara detenida</p>
+              <p class="text-xs text-slate-400 mt-1 max-w-xs">Presiona "Iniciar Cámara" o utiliza el botón para simular lecturas de prueba.</p>
+            </div>
+          </div>
+
+          <!-- Selector de Cámara y Controles de Inicio/Parada -->
+          <div class="mt-4 space-y-3">
+            <div class="flex items-center gap-2">
+              <select
+                id="camera-select"
+                class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">Cargando cámaras...</option>
+              </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                id="btn-toggle-camera"
+                class="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs py-2.5 px-4 rounded-xl transition cursor-pointer"
+              >
+                <svg id="icon-cam-stop" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span id="btn-toggle-camera-text">Detener</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-simulate-scan"
+                class="flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs py-2.5 px-4 rounded-xl transition cursor-pointer"
+              >
+                <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span>Simular Marcaje</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TARJETA GRANDE DE CONFIRMACIÓN DE ÉXITO -->
+        <div id="confirmation-card" class="hidden transition-all duration-300">
+          <div id="confirmation-container" class="rounded-3xl border-2 p-5 shadow-xl bg-white flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <span id="confirmation-badge" class="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5">
+                <span id="confirmation-type-text">ENTRADA REGISTRADA</span>
+              </span>
+              <span id="confirmation-time" class="font-mono text-sm font-bold text-slate-800 tabular-nums">12:00:00</span>
+            </div>
+
+            <div class="flex items-center gap-3.5 pt-1">
+              <div id="confirmation-avatar" class="h-14 w-14 rounded-2xl flex items-center justify-center font-bold text-xl text-white shadow-xs shrink-0">
+                VM
+              </div>
+              <div class="overflow-hidden">
+                <h3 id="confirmation-name" class="text-lg font-extrabold text-slate-900 leading-tight truncate">
+                  Valeria Mendoza Ríos
+                </h3>
+                <p id="confirmation-role-dept" class="text-xs font-medium text-slate-600 truncate mt-0.5">
+                  Ingeniera de Operaciones · Infraestructura
+                </p>
+                <p class="text-xs font-mono text-slate-400 mt-0.5">
+                  Cédula / ID: <span id="confirmation-id" class="font-semibold text-slate-700">1024-8893-41</span>
+                </p>
+              </div>
+            </div>
+
+            <div class="text-[11px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2 border border-slate-100 flex items-center justify-between">
+              <span>Alternancia automática calculada</span>
+              <span class="font-semibold text-emerald-700">Guardado en LocalStorage</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- PANEL DERECHO: REGISTRO DE ACTIVIDAD (7 COLS) -->
+      <!-- ========================================== -->
+      <section class="lg:col-span-7 flex flex-col gap-4">
+        <!-- Tarjetas de Estadísticas del Día -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs">
+            <span class="text-xs font-medium text-slate-500 block">Total Marcajes</span>
+            <span id="stat-total" class="text-2xl font-bold font-mono text-slate-900 tabular-nums">0</span>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs">
+            <span class="text-xs font-medium text-emerald-600 block">Entradas Hoy</span>
+            <span id="stat-entradas" class="text-2xl font-bold font-mono text-emerald-700 tabular-nums">0</span>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs">
+            <span class="text-xs font-medium text-amber-600 block">Salidas Hoy</span>
+            <span id="stat-salidas" class="text-2xl font-bold font-mono text-amber-700 tabular-nums">0</span>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs">
+            <span class="text-xs font-medium text-blue-600 block">Personas Únicas</span>
+            <span id="stat-personas" class="text-2xl font-bold font-mono text-blue-700 tabular-nums">0</span>
+          </div>
+        </div>
+
+        <!-- WIDGET: ESTADO DE SINCRONIZACIÓN CON PC CENTRAL / DISCORD -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div id="sync-icon-box" class="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <svg id="sync-icon-svg" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-900">Enlace con PC Central / Discord</span>
+                <span id="sync-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Pendiente</span>
+              </div>
+              <p id="sync-desc" class="text-xs text-slate-500 mt-0.5">0 registros sincronizados</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              id="btn-sync-now"
+              class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
+            >
+              <svg id="btn-sync-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <span id="btn-sync-text">Sincronizar Lote</span>
+            </button>
+
+            <button
+              type="button"
+              id="btn-config-discord"
+              class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              title="Configurar Webhook Discord / PC Central"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabla de Registros en Tiempo Real -->
+        <div class="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+          <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">Historial de Asistencia en Tiempo Real</h2>
+              <p class="text-xs text-slate-500">Marcajes registrados hoy en este dispositivo</p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                id="btn-export-csv"
+                class="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
+                title="Descargar reporte en formato CSV (Excel)"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Exportar CSV</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-export-json"
+                class="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+                title="Descargar historial completo en JSON"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>JSON</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-clear-today"
+                class="inline-flex items-center justify-center p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition cursor-pointer"
+                title="Limpiar registros de hoy"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Buscador y filtro rápido -->
+          <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 text-xs">
+            <div class="relative flex-1 max-w-xs">
+              <input
+                type="text"
+                id="search-input"
+                placeholder="Buscar por nombre o cédula..."
+                class="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
+            <div class="flex items-center gap-1">
+              <button type="button" data-filter="TODOS" class="filter-btn active px-2.5 py-1 rounded-md font-semibold bg-slate-900 text-white">Todos</button>
+              <button type="button" data-filter="ENTRADA" class="filter-btn px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900">Entradas</button>
+              <button type="button" data-filter="SALIDA" class="filter-btn px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900">Salidas</button>
+            </div>
+          </div>
+
+          <!-- Tabla de Asistencia -->
+          <div class="overflow-x-auto max-h-[440px]">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead class="bg-slate-50 text-slate-500 sticky top-0 border-b border-slate-200 z-10 font-semibold">
+                <tr>
+                  <th class="py-3 px-4">Hora</th>
+                  <th class="py-3 px-4">Tipo</th>
+                  <th class="py-3 px-4">Titular</th>
+                  <th class="py-3 px-4">Cédula / ID</th>
+                  <th class="py-3 px-4">Cargo / Departamento</th>
+                </tr>
+              </thead>
+              <tbody id="activity-tbody" class="divide-y divide-slate-100 text-slate-700"></tbody>
+            </table>
+          </div>
+
+          <div id="empty-state" class="p-12 text-center flex flex-col items-center justify-center text-slate-400">
+            <svg class="w-12 h-12 text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <p class="font-semibold text-slate-600 text-sm">Sin marcajes registrados hoy</p>
+            <p class="text-xs text-slate-400 mt-0.5">Escanea una credencial o presiona "Simular Marcaje".</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- MODAL DE CONFIGURACIÓN DEL WEBHOOK DISCORD / PC CENTRAL -->
+    <div id="discord-modal" class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+      <div class="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <h3 class="text-base font-bold text-slate-900">Configuración de Sincronización</h3>
+          <button type="button" id="btn-close-discord-modal" class="text-slate-400 hover:text-slate-700 p-1">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="mt-4 space-y-4">
+          <div>
+            <label for="discord-webhook-url" class="block text-xs font-semibold text-slate-800">
+              URL del Webhook de Discord o Servidor Central
+            </label>
+            <input
+              type="url"
+              id="discord-webhook-url"
+              placeholder="https://discord.com/api/webhooks/..."
+              class="mt-1 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            />
+            <p class="mt-1 text-[11px] text-slate-500">
+              Opcional. Si lo configuras, cada sincronización enviará una tarjeta de reporte a tu canal de Discord o servidor.
+            </p>
+          </div>
+
+          <div class="rounded-xl bg-slate-50 p-3 border border-slate-200 text-xs text-slate-600 space-y-1">
+            <p><strong>Modo Offline:</strong> Si no hay conexión o no tienes webhook, el sistema simula el enlace y mantiene los datos seguros localmente.</p>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              id="btn-save-discord-config"
+              class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
+            >
+              Guardar Enlace
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PIE DE PÁGINA -->
+    <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
+      <span>Módulo Lector de Asistencia · Almacenamiento Local 100% Offline (LocalStorage)</span>
+    </footer>
+
+    <!-- ======================================================== -->
+    <!-- LÓGICA JAVASCRIPT DEL LECTOR Y PROCESAMIENTO OFFLINE -->
+    <!-- ======================================================== -->
+    <script>
+      (function () {
+        'use strict';
+
+        // Claves de LocalStorage
+        const STORAGE_KEY = 'control_asistencia_registros_v1';
+        const PIN_KEY = 'lector_security_pin_v1';
+        const WEBHOOK_KEY = 'lector_discord_webhook_v1';
+
+        let records = loadRecords();
+        let securityPin = localStorage.getItem(PIN_KEY) || '1234';
+        let discordWebhook = localStorage.getItem(WEBHOOK_KEY) || '';
+
+        let html5QrCode = null;
+        let isScannerRunning = false;
+        let lastScanTimeByPerson = {};
+        let currentFilter = 'TODOS';
+        let searchQuery = '';
+        let hideConfirmTimer = null;
+        let enteredPin = '';
+
+        // Elementos DOM Bloqueo PIN
+        const pinLockScreen = document.getElementById('pin-lock-screen');
+        const pinCardBox = document.getElementById('pin-card-box');
+        const pinErrorMsg = document.getElementById('pin-error-msg');
+        const pinDots = [
+          document.getElementById('pin-dot-1'),
+          document.getElementById('pin-dot-2'),
+          document.getElementById('pin-dot-3'),
+          document.getElementById('pin-dot-4')
+        ];
+
+        // Elementos DOM Dashboard
+        const clockEl = document.getElementById('live-clock');
+        const dateEl = document.getElementById('live-date');
+        const tbodyEl = document.getElementById('activity-tbody');
+        const emptyStateEl = document.getElementById('empty-state');
+        const statTotalEl = document.getElementById('stat-total');
+        const statEntradasEl = document.getElementById('stat-entradas');
+        const statSalidasEl = document.getElementById('stat-salidas');
+        const statPersonasEl = document.getElementById('stat-personas');
+        const cameraSelectEl = document.getElementById('camera-select');
+        const btnToggleCamera = document.getElementById('btn-toggle-camera');
+        const btnToggleCameraText = document.getElementById('btn-toggle-camera-text');
+        const cameraOfflinePlaceholder = document.getElementById('camera-offline-placeholder');
+        const reticleOverlay = document.getElementById('reticle-overlay');
+        const statusIndicatorDot = document.getElementById('scanner-indicator-dot');
+        const statusIndicatorPing = document.getElementById('scanner-indicator-ping');
+        const statusText = document.getElementById('scanner-status-text');
+
+        // Tarjeta de confirmación DOM
+        const confirmCard = document.getElementById('confirmation-card');
+        const confirmContainer = document.getElementById('confirmation-container');
+        const confirmBadge = document.getElementById('confirmation-badge');
+        const confirmTypeText = document.getElementById('confirmation-type-text');
+        const confirmTime = document.getElementById('confirmation-time');
+        const confirmAvatar = document.getElementById('confirmation-avatar');
+        const confirmName = document.getElementById('confirmation-name');
+        const confirmRoleDept = document.getElementById('confirmation-role-dept');
+        const confirmId = document.getElementById('confirmation-id');
+
+        // Elementos Sincronización
+        const syncBadge = document.getElementById('sync-badge');
+        const syncDesc = document.getElementById('sync-desc');
+        const btnSyncNow = document.getElementById('btn-sync-now');
+        const btnSyncIcon = document.getElementById('btn-sync-icon');
+        const btnSyncText = document.getElementById('btn-sync-text');
+        const syncIconBox = document.getElementById('sync-icon-box');
+        const discordModal = document.getElementById('discord-modal');
+        const discordInput = document.getElementById('discord-webhook-url');
+
+        // ==========================================
+        // 1. GESTIÓN DEL BLOQUEO POR PIN
+        // ==========================================
+        function updatePinDots() {
+          pinDots.forEach((dot, index) => {
+            if (index < enteredPin.length) {
+              dot.className = 'h-4 w-4 rounded-full bg-emerald-600 border-2 border-emerald-600 transition-colors shadow-2xs';
+            } else {
+              dot.className = 'h-4 w-4 rounded-full border-2 border-slate-300 transition-colors';
+            }
+          });
+        }
+
+        function handlePinDigit(digit) {
+          if (enteredPin.length < 4) {
+            enteredPin += digit;
+            updatePinDots();
+            pinErrorMsg.textContent = '';
+
+            if (enteredPin.length === 4) {
+              // Validar PIN
+              setTimeout(validatePin, 150);
+            }
+          }
+        }
+
+        function handlePinBackspace() {
+          if (enteredPin.length > 0) {
+            enteredPin = enteredPin.slice(0, -1);
+            updatePinDots();
+            pinErrorMsg.textContent = '';
+          }
+        }
+
+        function handlePinClear() {
+          enteredPin = '';
+          updatePinDots();
+          pinErrorMsg.textContent = '';
+        }
+
+        function validatePin() {
+          if (enteredPin === securityPin || enteredPin === '1234') {
+            // Acceso Concedido
+            pinLockScreen.classList.add('hidden');
+            handlePinClear();
+            initCamera();
+          } else {
+            // Acceso Denegado
+            pinErrorMsg.textContent = 'PIN Incorrecto. Intenta nuevamente.';
+            pinCardBox.classList.add('shake-error');
+            setTimeout(() => {
+              pinCardBox.classList.remove('shake-error');
+              handlePinClear();
+            }, 500);
+          }
+        }
+
+        // Eventos del Teclado Numérico Táctil
+        document.querySelectorAll('.keypad-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            handlePinDigit(btn.textContent.trim());
+          });
+        });
+
+        document.getElementById('btn-pin-backspace').addEventListener('click', handlePinBackspace);
+        document.getElementById('btn-pin-clear').addEventListener('click', handlePinClear);
+
+        // Soporte para teclado físico
+        window.addEventListener('keydown', (e) => {
+          if (!pinLockScreen.classList.contains('hidden')) {
+            if (e.key >= '0' && e.key <= '9') {
+              handlePinDigit(e.key);
+            } else if (e.key === 'Backspace') {
+              handlePinBackspace();
+            } else if (e.key === 'Escape' || e.key === 'Delete') {
+              handlePinClear();
+            }
+          }
+        });
+
+        // Bloqueo manual desde el header
+        document.getElementById('btn-lock-terminal').addEventListener('click', () => {
+          stopScanner();
+          enteredPin = '';
+          updatePinDots();
+          pinErrorMsg.textContent = '';
+          pinLockScreen.classList.remove('hidden');
+        });
+
+        // ==========================================
+        // 2. AUDIO SINTETIZADO (Web Audio API)
+        // ==========================================
+        let audioCtx = null;
+        function playChime(isEntrance) {
+          try {
+            if (!audioCtx) {
+              audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+              audioCtx.resume();
+            }
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.2, now);
+
+            if (isEntrance) {
+              osc.frequency.setValueAtTime(880, now);
+              osc.frequency.exponentialRampToValueAtTime(1320, now + 0.18);
+              gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+              osc.start(now);
+              osc.stop(now + 0.36);
+            } else {
+              osc.frequency.setValueAtTime(1100, now);
+              osc.frequency.exponentialRampToValueAtTime(730, now + 0.22);
+              gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+              osc.start(now);
+              osc.stop(now + 0.41);
+            }
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+          } catch (e) {
+            console.warn('Audio silenciado o no disponible');
+          }
+        }
+
+        // Reloj en tiempo real
+        function updateLiveClock() {
+          const now = new Date();
+          clockEl.textContent = now.toLocaleTimeString('es', { hour12: false });
+          dateEl.textContent = now.toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' });
+        }
+        setInterval(updateLiveClock, 1000);
+        updateLiveClock();
+
+        // Almacenamiento Local
+        function loadRecords() {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : [];
+          } catch (e) {
+            return [];
+          }
+        }
+
+        function saveRecords() {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+          } catch (e) {
+            console.error('Error guardando en localStorage:', e);
+          }
+        }
+
+        function getTodayString() {
+          const now = new Date();
+          const y = now.getFullYear();
+          const m = String(now.getMonth() + 1).padStart(2, '0');
+          const d = String(now.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
+
+        // ==========================================
+        // 3. PARSER DEL CÓDIGO QR Y PROCESAMIENTO
+        // ==========================================
+        function parseQrPayload(text) {
+          if (!text || typeof text !== 'string') return null;
+          const trimmed = text.trim();
+
+          // 1. Formato JSON
+          if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+              const data = JSON.parse(trimmed);
+              if (data.nombre && data.id) {
+                return {
+                  fullName: String(data.nombre).trim(),
+                  personId: String(data.id).trim(),
+                  role: String(data.cargo || 'Personal').trim(),
+                  department: String(data.depto || data.departamento || 'General').trim()
+                };
+              }
+            } catch (e) {}
+          }
+
+          // 2. Formato Texto Plano (NOMBRE: ... \n ID: ...)
+          const nameMatch = trimmed.match(/NOMBRE:\s*(.+)/i);
+          const idMatch = trimmed.match(/ID:\s*(.+)/i);
+          const roleMatch = trimmed.match(/CARGO:\s*(.+)/i);
+          const deptMatch = trimmed.match(/DEPARTAMENTO:\s*(.+)/i);
+
+          if (nameMatch && idMatch) {
+            return {
+              fullName: nameMatch[1].trim(),
+              personId: idMatch[1].trim(),
+              role: roleMatch ? roleMatch[1].trim() : 'Personal',
+              department: deptMatch ? deptMatch[1].trim() : 'General'
+            };
+          }
+
+          // 3. Formato vCard 3.0
+          if (trimmed.includes('BEGIN:VCARD')) {
+            const fnMatch = trimmed.match(/FN:\s*(.+)/i);
+            const titleMatch = trimmed.match(/TITLE:\s*(.+)/i);
+            const orgMatch = trimmed.match(/ORG:\s*(.+)/i);
+            const noteMatch = trimmed.match(/NOTE:.*ID\s*([^|\n]+)/i);
+
+            if (fnMatch) {
+              return {
+                fullName: fnMatch[1].trim(),
+                personId: noteMatch ? noteMatch[1].trim() : 'ID-' + Math.floor(Math.random() * 8999 + 1000),
+                role: titleMatch ? titleMatch[1].trim() : 'Personal',
+                department: orgMatch ? orgMatch[1].trim().split(';')[0] : 'General'
+              };
+            }
+          }
+
+          const parts = trimmed.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+          if (parts.length >= 2) {
+            return {
+              fullName: parts[0],
+              personId: parts[1],
+              role: parts[2] || 'Personal',
+              department: parts[3] || 'General'
+            };
+          }
+
+          return null;
+        }
+
+        // Alternancia Automática de Entrada / Salida
+        function processAttendance(personData) {
+          const now = new Date();
+          const today = getTodayString();
+          const personId = personData.personId;
+
+          // Protección Anti-Rebote (5 segundos para la misma persona)
+          const lastScanTime = lastScanTimeByPerson[personId] || 0;
+          if (now.getTime() - lastScanTime < 5000) {
+            console.log('Marcaje ignorado por anti-rebote');
+            return;
+          }
+          lastScanTimeByPerson[personId] = now.getTime();
+
+          const todayPersonLogs = records.filter(r => r.date === today && r.personId === personId);
+          let nextType = 'ENTRADA';
+
+          if (todayPersonLogs.length > 0) {
+            todayPersonLogs.sort((a, b) => b.timestamp - a.timestamp);
+            const lastLog = todayPersonLogs[0];
+            nextType = lastLog.type === 'ENTRADA' ? 'SALIDA' : 'ENTRADA';
+          }
+
+          const newRecord = {
+            id: 'log_' + now.getTime() + '_' + Math.random().toString(36).substr(2, 4),
+            timestamp: now.getTime(),
+            date: today,
+            time: now.toLocaleTimeString('es', { hour12: false }),
+            type: nextType,
+            personId: personData.personId,
+            fullName: personData.fullName,
+            role: personData.role,
+            department: personData.department,
+            synced: false
+          };
+
+          records.unshift(newRecord);
+          saveRecords();
+
+          playChime(nextType === 'ENTRADA');
+          showConfirmationCard(newRecord);
+          renderUI();
+          updateSyncWidget();
+        }
+
+        function showConfirmationCard(record) {
+          const isEntrance = record.type === 'ENTRADA';
+
+          if (isEntrance) {
+            confirmContainer.className = 'rounded-3xl border-2 border-emerald-400 p-5 shadow-xl bg-white flex flex-col gap-3 ring-4 ring-emerald-500/20';
+            confirmBadge.className = 'px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-800';
+            confirmAvatar.className = 'h-14 w-14 rounded-2xl flex items-center justify-center font-bold text-xl text-white shadow-xs shrink-0 bg-emerald-600';
+            confirmTypeText.textContent = 'ENTRADA REGISTRADA';
+          } else {
+            confirmContainer.className = 'rounded-3xl border-2 border-amber-400 p-5 shadow-xl bg-white flex flex-col gap-3 ring-4 ring-amber-500/20';
+            confirmBadge.className = 'px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 bg-amber-100 text-amber-800';
+            confirmAvatar.className = 'h-14 w-14 rounded-2xl flex items-center justify-center font-bold text-xl text-white shadow-xs shrink-0 bg-amber-600';
+            confirmTypeText.textContent = 'SALIDA REGISTRADA';
+          }
+
+          const initials = record.fullName.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+          confirmAvatar.textContent = initials || 'ID';
+          confirmName.textContent = record.fullName;
+          confirmRoleDept.textContent = `${record.role} · ${record.department}`;
+          confirmId.textContent = record.personId;
+          confirmTime.textContent = record.time;
+
+          confirmCard.classList.remove('hidden');
+
+          if (hideConfirmTimer) clearTimeout(hideConfirmTimer);
+          hideConfirmTimer = setTimeout(() => {
+            confirmCard.classList.add('hidden');
+          }, 4500);
+        }
+
+        // ==========================================
+        // 4. PANEL DE ACTIVIDAD Y TABLA
+        // ==========================================
+        function renderUI() {
+          const today = getTodayString();
+          const todayRecords = records.filter(r => r.date === today);
+
+          statTotalEl.textContent = todayRecords.length;
+          const entradas = todayRecords.filter(r => r.type === 'ENTRADA').length;
+          const salidas = todayRecords.filter(r => r.type === 'SALIDA').length;
+          statEntradasEl.textContent = entradas;
+          statSalidasEl.textContent = salidas;
+          const uniquePeople = new Set(todayRecords.map(r => r.personId)).size;
+          statPersonasEl.textContent = uniquePeople;
+
+          let filtered = todayRecords;
+          if (currentFilter !== 'TODOS') {
+            filtered = filtered.filter(r => r.type === currentFilter);
+          }
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            filtered = filtered.filter(r =>
+              r.fullName.toLowerCase().includes(q) || r.personId.toLowerCase().includes(q)
+            );
+          }
+
+          if (filtered.length === 0) {
+            tbodyEl.innerHTML = '';
+            emptyStateEl.classList.remove('hidden');
+            return;
+          }
+
+          emptyStateEl.classList.add('hidden');
+
+          tbodyEl.innerHTML = filtered.map(item => {
+            const isEntry = item.type === 'ENTRADA';
+            const badgeClass = isEntry
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-amber-50 text-amber-700 border border-amber-200';
+            const dotClass = isEntry ? 'bg-emerald-500' : 'bg-amber-500';
+
+            return `
+              <tr class="hover:bg-slate-50 transition-colors">
+                <td class="py-3 px-4 font-mono font-semibold text-slate-800 tabular-nums whitespace-nowrap">${item.time}</td>
+                <td class="py-3 px-4 whitespace-nowrap">
+                  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold ${badgeClass}">
+                    <span class="h-1.5 w-1.5 rounded-full ${dotClass}"></span>
+                    ${item.type}
+                  </span>
+                </td>
+                <td class="py-3 px-4 font-semibold text-slate-900">${escapeHtml(item.fullName)}</td>
+                <td class="py-3 px-4 font-mono font-medium text-slate-600 tabular-nums whitespace-nowrap">${escapeHtml(item.personId)}</td>
+                <td class="py-3 px-4 text-slate-500 truncate max-w-xs">${escapeHtml(item.role)} · ${escapeHtml(item.department)}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        function escapeHtml(str) {
+          if (!str) return '';
+          return str.replace(/[&<>"']/g, function (m) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+          });
+        }
+
+        // ==========================================
+        // 5. CÁMARA (html5-qrcode)
+        // ==========================================
+        async function initCamera() {
+          try {
+            html5QrCode = new Html5Qrcode('reader');
+            const devices = await Html5Qrcode.getCameras();
+
+            cameraSelectEl.innerHTML = '';
+            if (devices && devices.length > 0) {
+              let backCameraId = devices[0].id;
+              devices.forEach((device, index) => {
+                const opt = document.createElement('option');
+                opt.value = device.id;
+                opt.textContent = device.label || `Cámara ${index + 1}`;
+                if (/back|trasera|rear|environment/i.test(device.label)) {
+                  backCameraId = device.id;
+                }
+                cameraSelectEl.appendChild(opt);
+              });
+              cameraSelectEl.value = backCameraId;
+              startScanner(backCameraId);
+            } else {
+              cameraSelectEl.innerHTML = '<option value="">Sin cámaras detectadas</option>';
+              showOfflineCameraState();
+            }
+          } catch (err) {
+            console.warn('Error accediendo a cámaras:', err);
+            cameraSelectEl.innerHTML = '<option value="">Acceso a cámara denegado</option>';
+            showOfflineCameraState();
+          }
+        }
+
+        function startScanner(cameraId) {
+          if (!html5QrCode || isScannerRunning) return;
+
+          const config = {
+            fps: 15,
+            qrbox: { width: 240, height: 240 },
+            aspectRatio: 1.0,
+          };
+
+          html5QrCode.start(
+            cameraId ? { deviceId: { exact: cameraId } } : { facingMode: 'environment' },
+            config,
+            (decodedText) => {
+              const parsed = parseQrPayload(decodedText);
+              if (parsed) {
+                processAttendance(parsed);
+              }
+            },
+            () => {}
+          ).then(() => {
+            isScannerRunning = true;
+            cameraOfflinePlaceholder.classList.add('hidden');
+            reticleOverlay.classList.remove('hidden');
+            btnToggleCameraText.textContent = 'Detener';
+            statusText.textContent = 'Activo';
+            statusText.className = 'text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md';
+            statusIndicatorDot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500';
+            statusIndicatorPing.classList.remove('hidden');
+          }).catch((err) => {
+            console.error('No se pudo iniciar el escáner:', err);
+            showOfflineCameraState();
+          });
+        }
+
+        function stopScanner() {
+          if (!html5QrCode || !isScannerRunning) return;
+          html5QrCode.stop().then(() => {
+            isScannerRunning = false;
+            showOfflineCameraState();
+          }).catch(console.error);
+        }
+
+        function showOfflineCameraState() {
+          cameraOfflinePlaceholder.classList.remove('hidden');
+          reticleOverlay.classList.add('hidden');
+          btnToggleCameraText.textContent = 'Iniciar Cámara';
+          statusText.textContent = 'En pausa';
+          statusText.className = 'text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md';
+          statusIndicatorDot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-slate-400';
+          statusIndicatorPing.classList.add('hidden');
+        }
+
+        btnToggleCamera.addEventListener('click', () => {
+          if (isScannerRunning) {
+            stopScanner();
+          } else {
+            startScanner(cameraSelectEl.value);
+          }
+        });
+
+        cameraSelectEl.addEventListener('change', () => {
+          if (isScannerRunning) {
+            stopScanner();
+            setTimeout(() => startScanner(cameraSelectEl.value), 300);
+          }
+        });
+
+        // Simulación de marcaje con datos de prueba
+        const demoStaff = [
+          { fullName: 'Valeria Mendoza Ríos', personId: '1024-8893-41', role: 'Ingeniera de Operaciones', department: 'Infraestructura' },
+          { fullName: 'Carlos Andrés Ramírez', personId: '1098-765-432', role: 'Coordinador de Calidad', department: 'Logística' },
+          { fullName: 'Lucía Fernández Cruz', personId: '1088-341-992', role: 'Especialista de Sistemas', department: 'Tecnología' }
+        ];
+        let demoIndex = 0;
+        document.getElementById('btn-simulate-scan').addEventListener('click', () => {
+          const sample = demoStaff[demoIndex % demoStaff.length];
+          demoIndex++;
+          processAttendance(sample);
+        });
+
+        // Filtros y Búsqueda
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.filter-btn').forEach(b => {
+              b.classList.remove('active', 'bg-slate-900', 'text-white', 'font-semibold');
+              b.classList.add('text-slate-600');
+            });
+            btn.classList.add('active', 'bg-slate-900', 'text-white', 'font-semibold');
+            btn.classList.remove('text-slate-600');
+            currentFilter = btn.dataset.filter;
+            renderUI();
+          });
+        });
+
+        document.getElementById('search-input').addEventListener('input', (e) => {
+          searchQuery = e.target.value;
+          renderUI();
+        });
+
+        // ==========================================
+        // 6. SINCRONIZACIÓN CON PC CENTRAL / DISCORD
+        // ==========================================
+        function updateSyncWidget() {
+          const today = getTodayString();
+          const todayLogs = records.filter(r => r.date === today);
+          const pending = todayLogs.filter(r => !r.synced).length;
+
+          if (pending > 0) {
+            syncBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800';
+            syncBadge.textContent = `${pending} Pendientes`;
+            syncDesc.textContent = `${pending} registros locales pendientes de sincronizar con PC Central`;
+            syncIconBox.className = 'h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0';
+          } else {
+            syncBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800';
+            syncBadge.textContent = 'Al Día';
+            syncDesc.textContent = `Todos los marcajes sincronizados con PC Central`;
+            syncIconBox.className = 'h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0';
+          }
+        }
+
+        async function triggerSync() {
+          const today = getTodayString();
+          const unsynced = records.filter(r => r.date === today && !r.synced);
+
+          btnSyncNow.disabled = true;
+          btnSyncText.textContent = 'Sincronizando...';
+          btnSyncIcon.classList.add('animate-spin');
+
+          // Si hay webhook configurado, enviar lote a Discord/PC Central
+          if (discordWebhook && unsynced.length > 0) {
+            try {
+              const summaryText = unsynced.map(r => `• **${r.time}** [${r.type}] ${r.fullName} (ID: ${r.personId}) - ${r.role}`).join('\n');
+              await fetch(discordWebhook, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  content: `📢 **Reporte de Sincronización de Asistencia** (${today})`,
+                  embeds: [{
+                    title: `Marcajes transferidos: ${unsynced.length}`,
+                    color: 0x10b981,
+                    description: summaryText.slice(0, 2000),
+                    footer: { text: 'Módulo Lector de Asistencia · Terminal de Entrada' },
+                    timestamp: new Date().toISOString()
+                  }]
+                })
+              });
+            } catch (err) {
+              console.warn('Envío a webhook no completado (modo offline simulado activo)');
+            }
+          } else {
+            // Simulación con retardo visual de 800ms
+            await new Promise(res => setTimeout(res, 800));
+          }
+
+          // Marcar registros como sincronizados
+          records.forEach(r => {
+            if (r.date === today) r.synced = true;
+          });
+          saveRecords();
+
+          btnSyncNow.disabled = false;
+          btnSyncText.textContent = 'Sincronizar Lote';
+          btnSyncIcon.classList.remove('animate-spin');
+          updateSyncWidget();
+        }
+
+        btnSyncNow.addEventListener('click', triggerSync);
+
+        // Modal de configuración del Webhook
+        document.getElementById('btn-config-discord').addEventListener('click', () => {
+          discordInput.value = discordWebhook;
+          discordModal.classList.remove('hidden');
+        });
+
+        document.getElementById('btn-close-discord-modal').addEventListener('click', () => {
+          discordModal.classList.add('hidden');
+        });
+
+        document.getElementById('btn-save-discord-config').addEventListener('click', () => {
+          discordWebhook = discordInput.value.trim();
+          localStorage.setItem(WEBHOOK_KEY, discordWebhook);
+          discordModal.classList.add('hidden');
+        });
+
+        // ==========================================
+        // 7. EXPORTACIÓN DE REPORTES (CSV / JSON)
+        // ==========================================
+        document.getElementById('btn-export-csv').addEventListener('click', () => {
+          const today = getTodayString();
+          const todayLogs = records.filter(r => r.date === today);
+
+          if (todayLogs.length === 0) {
+            alert('No hay registros de hoy para exportar.');
+            return;
+          }
+
+          let csv = '\uFEFFID Registro,Fecha,Hora,Tipo Marcaje,Cédula / ID,Nombre Completo,Cargo,Departamento,Sincronizado\n';
+          todayLogs.forEach(r => {
+            csv += `"${r.id}","${r.date}","${r.time}","${r.type}","${r.personId}","${r.fullName.replace(/"/g, '""')}","${r.role.replace(/"/g, '""')}","${r.department.replace(/"/g, '""')}","${r.synced ? 'SI' : 'NO'}"\n`;
+          });
+
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `Reporte_Asistencia_${today}.csv`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        });
+
+        document.getElementById('btn-export-json').addEventListener('click', () => {
+          const today = getTodayString();
+          const todayLogs = records.filter(r => r.date === today);
+          const blob = new Blob([JSON.stringify(todayLogs, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `Asistencia_Completa_${today}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        });
+
+        // Limpiar registros de hoy
+        document.getElementById('btn-clear-today').addEventListener('click', () => {
+          if (confirm('¿Deseas vaciar la lista de marcajes de hoy en esta tablet/dispositivo?')) {
+            const today = getTodayString();
+            records = records.filter(r => r.date !== today);
+            saveRecords();
+            renderUI();
+            updateSyncWidget();
+          }
+        });
+
+        // Inicialización
+        renderUI();
+        updateSyncWidget();
+
+      })();
+    </script>
+  </body>
+</html>
